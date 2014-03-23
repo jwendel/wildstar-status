@@ -1,0 +1,28 @@
+Launcher:
+
+host wildstar.patcher.ncsoft.com
+* wildstar.patcher.ncsoft.com is an alias for wildstar.patcher.gtm.ncsoft.com.
+* wildstar.patcher.gtm.ncsoft.com is an alias for wildstar.patcher.ncsoft.com.cdngc.net.
+* wildstar.patcher.ncsoft.com.cdngc.net has address 174.35.37.199
+* wildstar.patcher.ncsoft.com.cdngc.net has address 174.35.37.135
+
+ host www.wildstar-online.com
+www.wildstar-online.com is an alias for wildstaronline.gtm.wildstar-online.com.
+wildstaronline.gtm.wildstar-online.com has address 64.25.35.54
+
+
+Game:
+host: auth.na.wildstar-online.com
+auth.na.wildstar-online.com has address 64.25.34.198
+
+64.25.34.198 - login server
+64.25.34.201 24000 - Orias
+64.25.34.201 24001 - Olyssia
+64.25.34.201 24002 - Mikros
+64.25.34.202 24000 - Pergo
+64.25.34.204 24000 - Cassus
+64.25.34.204 24001 - Alizar
+64.25.34.204 24002 - Nexus
+
+
+ nmap --open -p23115-23120,23995-24010 64.25.34-35.*
