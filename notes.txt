@@ -1,10 +1,65 @@
 Launcher:
 
+host launcher.wsmod.com
+launcher.wsmod.com has address 96.126.121.147
+=======================================================
+GET /status.json HTTP/1.1
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+User-Agent: Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.1; WOW64; Trident/7.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; .NET4.0C; .NET4.0E)
+Host: launcher.wsmod.com
+If-Modified-Since: Sun, 23 Mar 2014 20:44:09 GMT
+Connection: Keep-Alive
+
+HTTP/1.1 200 OK
+Server: nginx/0.7.67
+Date: Sat, 05 Apr 2014 17:08:02 GMT
+Content-Type: text/plain
+Content-Length: 16
+Last-Modified: Sat, 05 Apr 2014 07:46:09 GMT
+Connection: keep-alive
+Access-Control-Allow-Origin: *
+Accept-Ranges: bytes
+
+{"status": "up"}
+=======================================================
+
+
 host wildstar.patcher.ncsoft.com
 * wildstar.patcher.ncsoft.com is an alias for wildstar.patcher.gtm.ncsoft.com.
 * wildstar.patcher.gtm.ncsoft.com is an alias for wildstar.patcher.ncsoft.com.cdngc.net.
 * wildstar.patcher.ncsoft.com.cdngc.net has address 174.35.37.199
 * wildstar.patcher.ncsoft.com.cdngc.net has address 174.35.37.135
+
+curl -v http://wildstar.patcher.ncsoft.com/version.txt
+=======================================================
+GET /version.txt HTTP/1.1
+Connection: Keep-Alive
+Accept: text/*, application/octet-stream
+Range: bytes=0-3
+Host: wildstar.patcher.ncsoft.com
+=======================================================
+GET /deltas/6610/15fc45d7a8ceff2a74e790dc3034bb4ce135b380.bin HTTP/1.1
+Connection: Keep-Alive
+Accept: text/*, application/octet-stream
+Range: bytes=0-2012332
+Host: wildstar.patcher.ncsoft.com
+=======================================================
+GET /6610/Launcher.exe.bin HTTP/1.1
+Connection: Keep-Alive
+Accept: text/*, application/octet-stream
+Range: bytes=0-19
+Host: wildstar.patcher.ncsoft.com
+=======================================================
+GET /6610/a4a21383fc5d06f17fa37f5eba53f4fe490d0630.bin HTTP/1.1
+Connection: Keep-Alive
+Accept: text/*, application/octet-stream
+Range: bytes=0-5454327
+Host: wildstar.patcher.ncsoft.com
+=======================================================
+=======================================================
+
 
  host www.wildstar-online.com
 www.wildstar-online.com is an alias for wildstaronline.gtm.wildstar-online.com.
