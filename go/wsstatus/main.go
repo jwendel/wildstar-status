@@ -30,13 +30,13 @@ func main() {
 }
 
 func (p *icmpEcho) Timestamp() (time.Time, error) {
-	t := &time.Time{}
-	err := t.UnmarshalBinary(p.Data)
+	t := time.Time{}
+	err := t.UnmarshalBinary(p.Data[:15])
 	if err != nil {
-		fmt.Println("unmarshalbinary problem: ", err)
+		fmt.Println("icmpEcho.UnmarshalBinary problem: ", err)
 	}
 
-	return *t, err
+	return t, err
 }
 
 func PacketConnICMPEcho(host string) {
@@ -100,22 +100,15 @@ func PacketConnICMPEcho(host string) {
 			fmt.Printf("PacketConn.ReadFrom failed: %v\n", err)
 			continue
 		}
-		// See BUG section.
-		//if net == "ip4" {
-		//	rb = ipv4Payload(rb)
-		//}
 		data := rb[:n]
-		if addr.String() != ra.String() {
-			fmt.Println("returned addr not the same as the expected one")
-		}
 		if m, err = parseICMPMessage(data); err != nil {
 			fmt.Printf("parseICMPMessage failed: %v\n", err)
 		}
 
 		switch m.Type {
-		case icmpv4EchoRequest, icmpv6EchoRequest:
+		case icmpv4EchoRequest:
 			continue
-		case icmpv4EchoReply, icmpv6EchoReply:
+		case icmpv4EchoReply:
 			switch p := m.Body.(type) {
 			case *icmpEcho:
 				tm, err := p.Timestamp()
@@ -133,11 +126,3 @@ func PacketConnICMPEcho(host string) {
 	}
 
 }
-
-// func ipv4Payload(b []byte) []byte {
-// 	if len(b) < 20 {
-// 		return b
-// 	}
-// 	hdrlen := int(b[0]&0x0f) << 2
-// 	return b[hdrlen:]
-// }
