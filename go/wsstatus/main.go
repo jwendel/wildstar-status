@@ -29,6 +29,8 @@ func main() {
 	// }
 	p := NewPinger()
 	p.AddHost(host)
+	p.AddHost("google.com")
+	p.AddHost("ffxiv.com")
 	err := p.Start()
 	if err != nil {
 		fmt.Println(err)

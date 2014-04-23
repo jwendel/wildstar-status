@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
+	"syscall"
 	"time"
 )
 
@@ -29,8 +31,9 @@ type Result struct {
 }
 
 type Pinger struct {
-	hosts   []string
 	Results <-chan Result
+
+	hosts   []string
 	rchan   chan Result
 	running bool
 	listen  net.PacketConn
@@ -56,22 +59,50 @@ func (p *Pinger) Start() error {
 		return errors.New("Pinger already running")
 	}
 
+	// lets try to make ourselves root if we can
+	uid := syscall.Getuid()
+	if uid > 0 {
+		err := syscall.Setuid(0)
+		if err != nil {
+			log.Println("Unable to setuid(0) - ", err)
+		}
+	}
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
-	p.listen = c
 	if err != nil {
 		fmt.Printf("ListenPacket failed: %v\n", err)
 		return errors.New("Need a raw socket to ping (which requires root/admin)")
 	}
+	if uid > 0 {
+		err := syscall.Setuid(uid)
+		if err != nil {
+			log.Printf("Unable to setuid(%d) - %s", uid, err)
+		}
+	}
+	p.listen = c
 
-	go p.start()
+	p.start()
 	return nil
 }
 
 func (p *Pinger) start() {
+	go p.icmpReciever()
+	for _, h := range p.hosts {
+		go p.pingHost(h)
+	}
+}
 
-	fmt.Println("start")
-	time.Sleep(time.Second * 2)
-	fmt.Println("end")
+func (p *Pinger) pingHost(h string) {
+	ra, err := net.ResolveIPAddr("ip4:icmp", h)
+	if err != nil {
+		fmt.Printf("ResolveIPAddr failed: %v\n", err)
+	}
+
+	for {
+		select {
+		case <-time.After(5 * time.Second):
+			p.packetConnICMPEcho(ra)
+		}
+	}
 }
 
 func (p *icmpEcho) Decode() (time.Time, error) {
@@ -84,62 +115,15 @@ func (p *icmpEcho) Decode() (time.Time, error) {
 	return t, err
 }
 
-func (p *Pinger) packetConnICMPEcho(host string) {
+func (p *Pinger) icmpReciever() {
 
-	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
-	if err != nil {
-		fmt.Printf("ListenPacket failed: %v\n", err)
-		panic("Need a raw socket to ping (which requires root/admin)")
-	}
-	c.SetDeadline(time.Now().Add(2000 * time.Millisecond))
-	defer c.Close()
-
-	ra, err := net.ResolveIPAddr("ip4:icmp", host)
-	ra2, err := net.ResolveIPAddr("ip4:icmp", "ffxiv.com")
-	if err != nil {
-		fmt.Printf("ResolveIPAddr failed: %v\n", err)
-	}
-	typ := icmpv4EchoRequest
-	xid, xseq := os.Getpid()&0xffff, 1
-	before := time.Now()
-	tdata, err := before.MarshalBinary()
-	if err != nil {
-		fmt.Println("time.MarshalBinary failed: ", err)
-	}
-	wb, err := (&icmpMessage{
-		Type: typ, Code: 0,
-		Body: &icmpEcho{
-			ID:   xid,
-			Seq:  xseq,
-			Data: tdata,
-		},
-	}).Marshal()
-
-	wb2, err := (&icmpMessage{
-		Type: typ, Code: 0,
-		Body: &icmpEcho{
-			ID:   xid + 1,
-			Seq:  xseq + 1,
-			Data: tdata,
-		},
-	}).Marshal()
-
-	if err != nil {
-		fmt.Printf("icmpMessage.Marshal failed: %v\n", err)
-	}
-	if _, err := c.WriteTo(wb, ra); err != nil {
-		fmt.Printf("PacketConn.WriteTo failed: %v\n", err)
-	}
-	if _, err := c.WriteTo(wb2, ra2); err != nil {
-		fmt.Printf("PacketConn.WriteTo failed: %v\n", err)
-	}
 	var m *icmpMessage
 	// Needs to be 20 bytes larger for IPv4 header
 	// rb := make([]byte, 20+len(wb))
 	rb := make([]byte, 512)
 	for {
-		c.SetDeadline(time.Now().Add(2000 * time.Millisecond))
-		n, addr, err := c.ReadFrom(rb)
+		p.listen.SetDeadline(time.Now().Add(1000 * time.Millisecond))
+		n, addr, err := p.listen.ReadFrom(rb)
 		if err != nil {
 			fmt.Printf("PacketConn.ReadFrom failed: %v\n", err)
 			continue
@@ -160,7 +144,7 @@ func (p *Pinger) packetConnICMPEcho(host string) {
 					fmt.Println("icmpMessage timestamp parse problem")
 				}
 				fmt.Println("from packet time:", time.Since(tm))
-				fmt.Println("from local time: ", time.Since(before))
+
 				fmt.Printf("got id=%v, seqnum=%v, addr=%s\n", p.ID, p.Seq, addr.String())
 			default:
 				fmt.Printf("got type=%v, code=%v\n", m.Type, m.Code)
@@ -168,4 +152,43 @@ func (p *Pinger) packetConnICMPEcho(host string) {
 
 		}
 	}
+}
+
+func (p *Pinger) packetConnICMPEcho(ra *net.IPAddr) {
+
+	typ := icmpv4EchoRequest
+	xid, xseq := os.Getpid()&0xffff, 1
+	before := time.Now()
+	tdata, err := before.MarshalBinary()
+	if err != nil {
+		fmt.Println("time.MarshalBinary failed: ", err)
+	}
+	wb, err := (&icmpMessage{
+		Type: typ, Code: 0,
+		Body: &icmpEcho{
+			ID:   xid,
+			Seq:  xseq,
+			Data: tdata,
+		},
+	}).Marshal()
+
+	// wb2, err := (&icmpMessage{
+	// 	Type: typ, Code: 0,
+	// 	Body: &icmpEcho{
+	// 		ID:   xid + 1,
+	// 		Seq:  xseq + 1,
+	// 		Data: tdata,
+	// 	},
+	// }).Marshal()
+
+	if err != nil {
+		fmt.Printf("icmpMessage.Marshal failed: %v\n", err)
+	}
+	if _, err := p.listen.WriteTo(wb, ra); err != nil {
+		fmt.Printf("PacketConn.WriteTo failed: %v\n", err)
+	}
+	// if _, err := c.WriteTo(wb2, ra2); err != nil {
+	// 	fmt.Printf("PacketConn.WriteTo failed: %v\n", err)
+	// }
+
 }
