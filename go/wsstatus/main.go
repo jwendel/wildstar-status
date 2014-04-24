@@ -12,10 +12,11 @@ import (
 	"os"
 	// "strings"
 	// "time"
+	"runtime"
 )
 
 func main() {
-
+	runtime.GOMAXPROCS(1)
 	if len(os.Args) != 2 {
 		fmt.Fprintf(os.Stderr, "Usage: %s {hostname}\n", os.Args[0])
 		os.Exit(1)
@@ -29,8 +30,8 @@ func main() {
 	// }
 	p := NewPinger()
 	p.AddHost(host)
-	p.AddHost("google.com")
-	p.AddHost("ffxiv.com")
+	// p.AddHost("google.com")
+	// p.AddHost("ffxiv.com")
 	err := p.Start()
 	if err != nil {
 		fmt.Println(err)
