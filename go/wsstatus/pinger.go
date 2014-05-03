@@ -95,12 +95,14 @@ func (p *Pinger) Start() error {
 func (p *Pinger) start() {
 	go p.icmpReciever()
 	for id, h := range p.hosts {
+		rcvd := p.receivers[id]
+		sent := make(chan int, sendCount)
 		go p.receiver(sent, rcvd)
 		go p.pingHost(h, id+ID_OFFSET, sent)
 	}
 }
 
-func (p *Pinger) pingHost(h string, id int) {
+func (p *Pinger) pingHost(h string, id int, sent chan<- int) {
 	ra, err := net.ResolveIPAddr("ip4:icmp", h)
 	if err != nil {
 		fmt.Printf("ResolveIPAddr failed: %v\n", err)
@@ -110,6 +112,7 @@ func (p *Pinger) pingHost(h string, id int) {
 	for {
 		for i := 0; i < sendCount; i++ {
 			p.packetConnICMPEcho(ra, id, count)
+			sent <- count
 			count++
 			select {
 			case <-time.After(sendDelay * time.Second):
@@ -122,21 +125,23 @@ func (p *Pinger) pingHost(h string, id int) {
 	}
 }
 
-func (p *Pinger) receiver(sent chan int, rcvd chan *ping) {
+func (p *Pinger) receiver(sent <-chan int, rcvd chan *ping) {
 
-	select {
-	case a := <-sent:
-		fmt.Println("receieved:", a)
-	case a := <-rcvd:
-		fmt.Println("receieved:", a)
+	for {
+		select {
+		case s := <-sent:
+			fmt.Println("from sent:", s)
+		case r := <-rcvd:
+			fmt.Println("from rcvd:", r)
+			tm, err := r.data.Decode()
+			if err != nil {
+				fmt.Println("icmpMessage timestamp parse problem")
+				continue
+			}
+			fmt.Println("from packet time:", r.rcvTime.Sub(tm))
+			fmt.Printf("got id=%v, seqnum=%v, addr=x\n", r.data.ID, r.data.Seq)
+		}
 	}
-	// tm, err := p.Decode()
-	// if err != nil {
-	// 	fmt.Println("icmpMessage timestamp parse problem")
-	// }
-	// fmt.Println("from packet time:", time.Since(tm))
-
-	// fmt.Printf("got id=%v, seqnum=%v, addr=%s\n", p.ID, p.Seq, addr.String())
 
 }
 
