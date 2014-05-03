@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	maxHosts  = 10
 	sendCount = 5
 	sendEvery = 10
 	sendDelay = 1
+	ID_OFFSET = 1099
 )
 
 type ResultData struct {
@@ -32,16 +32,23 @@ type Result struct {
 }
 
 type Pinger struct {
-	Results <-chan Result
-	hosts   []string
-	rchan   chan Result
-	running bool
-	listen  net.PacketConn
+	Results   <-chan Result
+	hosts     []string
+	receivers []chan *ping
+	rchan     chan Result
+	running   bool
+	listen    net.PacketConn
+}
+
+type ping struct {
+	data    *icmpEcho
+	rcvTime time.Time
 }
 
 func NewPinger() *Pinger {
 	p := new(Pinger)
-	p.hosts = make([]string, 0, maxHosts)
+	p.hosts = make([]string, 0, 10)
+	p.receivers = make([]chan *ping, 0, 10)
 	p.rchan = make(chan Result, 10)
 	p.Results = p.rchan
 	return p
@@ -49,7 +56,8 @@ func NewPinger() *Pinger {
 
 func (p *Pinger) AddHost(host string) int {
 	idx := len(p.hosts)
-	p.hosts = p.hosts[:idx+1]
+	p.hosts = append(p.hosts, host)
+	p.receivers = append(p.receivers, make(chan *ping))
 	p.hosts[idx] = host
 	return idx
 }
@@ -87,7 +95,8 @@ func (p *Pinger) Start() error {
 func (p *Pinger) start() {
 	go p.icmpReciever()
 	for id, h := range p.hosts {
-		go p.pingHost(h, id+5)
+		go p.receiver(sent, rcvd)
+		go p.pingHost(h, id+ID_OFFSET, sent)
 	}
 }
 
@@ -113,6 +122,32 @@ func (p *Pinger) pingHost(h string, id int) {
 	}
 }
 
+func (p *Pinger) receiver(sent chan int, rcvd chan *ping) {
+
+	select {
+	case a := <-sent:
+		fmt.Println("receieved:", a)
+	case a := <-rcvd:
+		fmt.Println("receieved:", a)
+	}
+	// tm, err := p.Decode()
+	// if err != nil {
+	// 	fmt.Println("icmpMessage timestamp parse problem")
+	// }
+	// fmt.Println("from packet time:", time.Since(tm))
+
+	// fmt.Printf("got id=%v, seqnum=%v, addr=%s\n", p.ID, p.Seq, addr.String())
+
+}
+
+func (p Pinger) handler(id int) (chan<- *ping, error) {
+	idx := id - ID_OFFSET
+	if idx >= 0 && idx < len(p.receivers) {
+		return p.receivers[idx], nil
+	}
+	return nil, fmt.Errorf("Invalid id %v returned.  Index would be %v.", id, idx)
+}
+
 func (p *icmpEcho) Decode() (time.Time, error) {
 	t := time.Time{}
 	err := t.UnmarshalBinary(p.Data[:15])
@@ -123,15 +158,15 @@ func (p *icmpEcho) Decode() (time.Time, error) {
 	return t, err
 }
 
-func (p *Pinger) icmpReciever() {
+func (p Pinger) icmpReciever() {
 
 	var m *icmpMessage
-	// Needs to be 20 bytes larger for IPv4 header
+	// Needs to be 20 bytes larger for the IPv4 header
 	// rb := make([]byte, 20+len(wb))
 	rb := make([]byte, 512)
 	for {
 		// p.listen.SetDeadline(time.Now().Add(1000 * time.Millisecond))
-		n, addr, err := p.listen.ReadFrom(rb)
+		n, _, err := p.listen.ReadFrom(rb)
 		if err != nil {
 			fmt.Printf("PacketConn.ReadFrom failed: %v\n", err)
 			continue
@@ -145,15 +180,15 @@ func (p *Pinger) icmpReciever() {
 		case icmpv4EchoRequest:
 			continue
 		case icmpv4EchoReply:
-			switch p := m.Body.(type) {
+			switch ie := m.Body.(type) {
 			case *icmpEcho:
-				tm, err := p.Decode()
-				if err != nil {
-					fmt.Println("icmpMessage timestamp parse problem")
+				res := &ping{ie, time.Now()}
+				handler, err := p.handler(ie.ID)
+				if err == nil {
+					handler <- res
+				} else {
+					fmt.Println(err)
 				}
-				fmt.Println("from packet time:", time.Since(tm))
-
-				fmt.Printf("got id=%v, seqnum=%v, addr=%s\n", p.ID, p.Seq, addr.String())
 			default:
 				fmt.Printf("got type=%v, code=%v\n", m.Type, m.Code)
 			}
