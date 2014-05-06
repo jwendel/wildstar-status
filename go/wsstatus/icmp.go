@@ -6,7 +6,11 @@
 
 package main
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"time"
+)
 
 const (
 	icmpv4EchoRequest = 8
@@ -115,4 +119,14 @@ func parseICMPEcho(b []byte) (*icmpEcho, error) {
 		copy(p.Data, b[4:])
 	}
 	return p, nil
+}
+
+func (p *icmpEcho) Decode() (time.Time, error) {
+	t := time.Time{}
+	err := t.UnmarshalBinary(p.Data[:15])
+	if err != nil {
+		fmt.Printf("icmpEcho.UnmarshalBinary problem: %v\n", err)
+	}
+
+	return t, err
 }
