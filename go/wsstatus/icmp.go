@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	icmpv4EchoRequest = 8
-	icmpv4EchoReply   = 0
-	icmpv6EchoRequest = 128
-	icmpv6EchoReply   = 129
+	icmpv4EchoRequest     = 8
+	icmpv4EchoReply       = 0
+	icmpv4DestUnreachable = 3
+	icmpv6EchoRequest     = 128
+	icmpv6EchoReply       = 129
 )
 
 // icmpMessage represents an ICMP message.

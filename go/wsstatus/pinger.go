@@ -6,13 +6,12 @@ import (
 	"log"
 	"net"
 	// "os"
-	"syscall"
 	"time"
 )
 
 const (
 	sendCount = 5
-	sendEvery = 10
+	sendEvery = 20
 	sendDelay = 1
 	ID_OFFSET = 1100
 )
@@ -35,7 +34,7 @@ type targetHost struct {
 	pingSent    chan int
 	pingHandler chan *ping
 	host        string
-	ip          *IPAddr
+	ip          *net.IPAddr
 }
 
 type Pinger struct {
@@ -65,7 +64,7 @@ func NewPinger() *Pinger {
 
 func (p *Pinger) AddHost(host string) int {
 	idx := len(p.hosts)
-	p.targets = append(p.targets, &targetHost{})
+	p.targets = append(p.targets, targetHost{host: host})
 	p.hosts = append(p.hosts, host)
 	p.receivers = append(p.receivers, make(chan *ping))
 	return idx
@@ -76,25 +75,13 @@ func (p *Pinger) Start() error {
 		return errors.New("Pinger already running")
 	}
 
-	// lets try to make ourselves root if we can
-	uid := syscall.Getuid()
-	if uid > 0 {
-		err := syscall.Setuid(0)
-		if err != nil {
-			log.Println("Unable to setuid(0) - ", err)
-		}
-	}
+	olduid := setRoot()
 	c, err := net.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
-		fmt.Printf("ListenPacket failed: %v\n", err)
+		log.Printf("ListenPacket failed: %v\n", err)
 		return errors.New("Need a raw socket to ping (which requires root/admin)")
 	}
-	if uid > 0 {
-		err := syscall.Setuid(uid)
-		if err != nil {
-			log.Printf("Unable to setuid(%d) - %s", uid, err)
-		}
-	}
+	unsetRoot(olduid)
 	p.listen = c
 
 	p.start()
@@ -114,7 +101,7 @@ func (p *Pinger) start() {
 func (p *Pinger) pingHost(h string, id int, sent chan<- int) {
 	ra, err := net.ResolveIPAddr("ip4:icmp", h)
 	if err != nil {
-		fmt.Printf("ResolveIPAddr failed: %v\n", err)
+		log.Printf("ResolveIPAddr failed: %v\n", err)
 	}
 
 	count := 0
@@ -139,15 +126,15 @@ func (p *Pinger) receiver(sent <-chan int, rcvd chan *ping) {
 	for {
 		select {
 		case _ = <-sent:
-			// fmt.Println("from sent:", s)
+			// log.Println("from sent:", s)
 		case r := <-rcvd:
-			// fmt.Println("from rcvd:", r)
+			// log.Println("from rcvd:", r)
 			tm, err := r.data.Decode()
 			if err != nil {
-				fmt.Println("icmpMessage timestamp parse problem")
+				log.Println("icmpMessage timestamp parse problem")
 				continue
 			}
-			fmt.Printf("got id=%v, seqnum=%v, time:%v\n", r.data.ID, r.data.Seq, r.rcvTime.Sub(tm))
+			log.Printf("got id=%v, seqnum=%v, time:%v\n", r.data.ID, r.data.Seq, r.rcvTime.Sub(tm))
 		}
 	}
 
@@ -171,17 +158,19 @@ func (p *Pinger) icmpReciever() {
 		// p.listen.SetDeadline(time.Now().Add(1000 * time.Millisecond))
 		n, _, err := p.listen.ReadFrom(rb)
 		if err != nil {
-			fmt.Printf("PacketConn.ReadFrom failed: %v\n", err)
+			log.Printf("PacketConn.ReadFrom failed: %v\n", err)
 			continue
 		}
 		data := rb[:n]
 		if m, err = parseICMPMessage(data); err != nil {
-			fmt.Printf("parseICMPMessage failed: %v\n", err)
+			log.Printf("parseICMPMessage failed: %v\n", err)
 		}
+
+		log.Println("receieved", data)
 
 		switch m.Type {
 		case icmpv4EchoRequest:
-			continue
+			log.Printf("got req type=%v, code=%v\n", m.Type, m.Code)
 		case icmpv4EchoReply:
 			switch ie := m.Body.(type) {
 			case *icmpEcho:
@@ -190,19 +179,23 @@ func (p *Pinger) icmpReciever() {
 				if err == nil {
 					handler <- res
 				} else {
-					fmt.Println(err)
+					log.Println(err)
 				}
 			default:
-				fmt.Printf("got type=%v, code=%v\n", m.Type, m.Code)
+				log.Printf("got reply type=%v, code=%v\n", m.Type, m.Code)
 			}
-
+		case icmpv4DestUnreachable:
+			// TODO: handle dest unreachable better
+			log.Printf("Destination unreachable type=%v code=%v\n body=%v", m.Type, m.Code, m.Body)
+		default:
+			log.Println("error: ", m)
 		}
 	}
 }
 
 // sendEchoReq will issue an IPv4 ICMP Echo Request to the given raddr.
 func (p *Pinger) sendEchoReq(raddr *net.IPAddr, id, seq int) {
-	fmt.Printf("sending to %v id:%v seq:%v\n", raddr, id, seq)
+	log.Printf("sending to %v id:%v seq:%v\n", raddr, id, seq)
 
 	// Do we even need a write timeout for ICMP?  I think not.
 	// p.listen.SetWriteDeadline(time.Now().Add(2 * time.Second))
@@ -211,7 +204,7 @@ func (p *Pinger) sendEchoReq(raddr *net.IPAddr, id, seq int) {
 	before := time.Now()
 	tdata, err := before.MarshalBinary()
 	if err != nil {
-		fmt.Println("time.MarshalBinary failed: ", err)
+		log.Println("time.MarshalBinary failed: ", err)
 	}
 
 	wb, err := (&icmpMessage{
@@ -225,11 +218,11 @@ func (p *Pinger) sendEchoReq(raddr *net.IPAddr, id, seq int) {
 	}).Marshal()
 
 	if err != nil {
-		fmt.Printf("icmpMessage.Marshal failed: %v\n", err)
+		log.Printf("icmpMessage.Marshal failed: %v\n", err)
 		return
 	}
 	if _, err := p.listen.WriteTo(wb, raddr); err != nil {
-		fmt.Printf("PacketConn.WriteTo failed: %v\n", err)
+		log.Printf("PacketConn.WriteTo failed: %v\n", err)
 	}
 
 }
