@@ -20,6 +20,48 @@ const (
 	icmpv6EchoReply       = 129
 )
 
+func (m *icmpMessage) DestUnreachableMsg() string {
+	if m.Type != icmpv4DestUnreachable {
+		return ""
+	}
+
+	switch m.Code {
+	case 0:
+		return "destination network unreachable"
+	case 1:
+		return "destination host unreachable"
+	case 2:
+		return "destination protocol unreachable"
+	case 3:
+		return "destination port unreachable"
+	case 4:
+		return "fragmentation required and DF flag set"
+	case 5:
+		return "source route failed"
+	case 6:
+		return "destination network unknown"
+	case 7:
+		return "destination host unknown"
+	case 8:
+		return "source host isolated"
+	case 9:
+		return "network administratively prohibited"
+	case 10:
+		return "host administratively prohibited"
+	case 11:
+		return "network unreachable for TOS"
+	case 12:
+		return "host unreachable for TOS"
+	case 13:
+		return "communication administratively prohibited"
+	case 14:
+		return "host Precedence Violation"
+	case 15:
+		return "precedence cutoff in effect"
+	}
+	return "destination unreachable: unknown error"
+}
+
 // icmpMessage represents an ICMP message.
 type icmpMessage struct {
 	Type     int             // type

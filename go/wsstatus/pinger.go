@@ -163,7 +163,7 @@ func (p *Pinger) icmpReciever() {
 		}
 		data := rb[:n]
 		if m, err = parseICMPMessage(data); err != nil {
-			log.Printf("parseICMPMessage failed: %v\n", err)
+			log.Printf("parseICMPMessage failed. bytecount=%v, data=%v. Error: %v\n", n, data, err)
 		}
 
 		log.Println("receieved", data)
@@ -185,8 +185,8 @@ func (p *Pinger) icmpReciever() {
 				log.Printf("got reply type=%v, code=%v\n", m.Type, m.Code)
 			}
 		case icmpv4DestUnreachable:
-			// TODO: handle dest unreachable better
-			log.Printf("Destination unreachable type=%v code=%v\n body=%v", m.Type, m.Code, m.Body)
+			// TODO: pass error to reciever
+			log.Printf("Destination unreachable type=%v code=%v codemsg=%v", m.Type, m.Code, m.DestUnreachableMsg())
 		default:
 			log.Println("error: ", m)
 		}
