@@ -104,6 +104,8 @@ func (p *Pinger) start() {
 			log.Printf("ResolveIPAddr failed: %v\n", err)
 			continue
 		}
+
+		// TODO: do this on add, so we don't get race conditions
 		if v, ok := p.recMap[ra.String()]; ok {
 			log.Printf("Host %v is a duplicate IP (%v) address as another entry.  Skipping.  val: %v, ok: %v", h, ra.String(), v, ok)
 			continue
