@@ -2,16 +2,15 @@ package main
 
 import (
 	"errors"
-	"fmt"
+	// "fmt"
 	"log"
 	"net"
-	// "os"
+	"os"
 	"time"
 )
 
 const (
 	sendCount = 1
-	idOffset  = 1100
 )
 
 type ResultData struct {
@@ -46,6 +45,7 @@ type Pinger struct {
 	SendDelay time.Duration
 	SendEvery time.Duration
 	recMap    map[string]chan *ping
+	pid       int
 }
 
 type ping struct {
@@ -62,6 +62,7 @@ func NewPinger() *Pinger {
 	p.recMap = make(map[string]chan *ping)
 	p.Results = p.rchan
 	p.SendDelay = time.Second
+	p.pid = os.Getpid()
 
 	return p
 }
@@ -108,19 +109,18 @@ func (p *Pinger) start() {
 			continue
 		}
 		p.recMap[ra.String()] = rcvd
-		log.Println("stuff ", p.recMap, p.recMap[ra.String()])
 
 		go p.receiver(sent, rcvd)
-		go p.pingHost(ra, id+idOffset, sent)
+		go p.pingHost(ra, sent)
 	}
 }
 
-func (p *Pinger) pingHost(ra *net.IPAddr, id int, sent chan<- int) {
+func (p *Pinger) pingHost(ra *net.IPAddr, sent chan<- int) {
 
 	count := 0
 	for {
 		for i := 0; i < sendCount; i++ {
-			p.sendEchoReq(ra, id, count)
+			p.sendEchoReq(ra, count)
 			sent <- count
 			count++
 			select {
@@ -153,14 +153,6 @@ func (p *Pinger) receiver(sent <-chan int, rcvd chan *ping) {
 
 }
 
-func (p Pinger) handler(id int) (chan<- *ping, error) {
-	idx := id - idOffset
-	if idx >= 0 && idx < len(p.receivers) {
-		return p.receivers[idx], nil
-	}
-	return nil, fmt.Errorf("Invalid id %v returned.  Index would be %v.", id, idx)
-}
-
 func (p *Pinger) icmpReciever() {
 
 	var m *icmpMessage
@@ -187,6 +179,10 @@ func (p *Pinger) icmpReciever() {
 		case icmpv4EchoReply:
 			switch ie := m.Body.(type) {
 			case *icmpEcho:
+				if ie.ID != p.pid {
+					log.Printf("Got echo_reply not matching our pid.  ignoring.")
+					continue
+				}
 				res := &ping{ie, time.Now()}
 				if handler, ok := p.recMap[addr.String()]; ok {
 					handler <- res
@@ -206,8 +202,8 @@ func (p *Pinger) icmpReciever() {
 }
 
 // sendEchoReq will issue an IPv4 ICMP Echo Request to the given raddr.
-func (p *Pinger) sendEchoReq(raddr *net.IPAddr, id, seq int) {
-	log.Printf("sending to %v id:%v seq:%v\n", raddr, id, seq)
+func (p *Pinger) sendEchoReq(raddr *net.IPAddr, seq int) {
+	log.Printf("sending to %v id:%v seq:%v\n", raddr, p.pid, seq)
 
 	// Do we even need a write timeout for ICMP?  I think not.
 	// p.listen.SetWriteDeadline(time.Now().Add(2 * time.Second))
@@ -223,7 +219,7 @@ func (p *Pinger) sendEchoReq(raddr *net.IPAddr, id, seq int) {
 		Type: icmpv4EchoRequest,
 		Code: 0,
 		Body: &icmpEcho{
-			ID:   id,
+			ID:   p.pid,
 			Seq:  seq,
 			Data: tdata,
 		},
