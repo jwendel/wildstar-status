@@ -10,10 +10,8 @@ import (
 )
 
 const (
-	sendCount = 5
-	sendEvery = 20
-	sendDelay = 1
-	ID_OFFSET = 1100
+	sendCount = 1
+	idOffset  = 1100
 )
 
 type ResultData struct {
@@ -45,6 +43,9 @@ type Pinger struct {
 	rchan     chan Result
 	running   bool
 	listen    net.PacketConn
+	SendDelay time.Duration
+	SendEvery time.Duration
+	recMap    map[string]chan *ping
 }
 
 type ping struct {
@@ -58,7 +59,10 @@ func NewPinger() *Pinger {
 	p.targets = make([]targetHost, 0, 10)
 	p.receivers = make([]chan *ping, 0, 10)
 	p.rchan = make(chan Result, 10)
+	p.recMap = make(map[string]chan *ping)
 	p.Results = p.rchan
+	p.SendDelay = time.Second
+
 	return p
 }
 
@@ -93,16 +97,25 @@ func (p *Pinger) start() {
 	for id, h := range p.hosts {
 		rcvd := p.receivers[id]
 		sent := make(chan int, sendCount)
+
+		ra, err := net.ResolveIPAddr("ip4:icmp", h)
+		if err != nil {
+			log.Printf("ResolveIPAddr failed: %v\n", err)
+			continue
+		}
+		if v, ok := p.recMap[ra.String()]; ok {
+			log.Printf("Host %v is a duplicate IP (%v) address as another entry.  Skipping.  val: %v, ok: %v", h, ra.String(), v, ok)
+			continue
+		}
+		p.recMap[ra.String()] = rcvd
+		log.Println("stuff ", p.recMap, p.recMap[ra.String()])
+
 		go p.receiver(sent, rcvd)
-		go p.pingHost(h, id+ID_OFFSET, sent)
+		go p.pingHost(ra, id+idOffset, sent)
 	}
 }
 
-func (p *Pinger) pingHost(h string, id int, sent chan<- int) {
-	ra, err := net.ResolveIPAddr("ip4:icmp", h)
-	if err != nil {
-		log.Printf("ResolveIPAddr failed: %v\n", err)
-	}
+func (p *Pinger) pingHost(ra *net.IPAddr, id int, sent chan<- int) {
 
 	count := 0
 	for {
@@ -111,11 +124,11 @@ func (p *Pinger) pingHost(h string, id int, sent chan<- int) {
 			sent <- count
 			count++
 			select {
-			case <-time.After(sendDelay * time.Second):
+			case <-time.After(p.SendDelay):
 			}
 		}
 		select {
-		case <-time.After(sendEvery * time.Second):
+		case <-time.After(p.SendEvery):
 		}
 
 	}
@@ -141,7 +154,7 @@ func (p *Pinger) receiver(sent <-chan int, rcvd chan *ping) {
 }
 
 func (p Pinger) handler(id int) (chan<- *ping, error) {
-	idx := id - ID_OFFSET
+	idx := id - idOffset
 	if idx >= 0 && idx < len(p.receivers) {
 		return p.receivers[idx], nil
 	}
@@ -156,7 +169,7 @@ func (p *Pinger) icmpReciever() {
 	rb := make([]byte, 512)
 	for {
 		// p.listen.SetDeadline(time.Now().Add(1000 * time.Millisecond))
-		n, _, err := p.listen.ReadFrom(rb)
+		n, addr, err := p.listen.ReadFrom(rb)
 		if err != nil {
 			log.Printf("PacketConn.ReadFrom failed: %v\n", err)
 			continue
@@ -175,11 +188,10 @@ func (p *Pinger) icmpReciever() {
 			switch ie := m.Body.(type) {
 			case *icmpEcho:
 				res := &ping{ie, time.Now()}
-				handler, err := p.handler(ie.ID)
-				if err == nil {
+				if handler, ok := p.recMap[addr.String()]; ok {
 					handler <- res
 				} else {
-					log.Println(err)
+					log.Println("Error finding reciever.", addr.String())
 				}
 			default:
 				log.Printf("got reply type=%v, code=%v\n", m.Type, m.Code)
